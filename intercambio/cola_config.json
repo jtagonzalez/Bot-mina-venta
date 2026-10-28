@@ -1,0 +1,14 @@
+{
+  "capacidad_inventario": 1200,
+  "posicion_companero": "abajo",
+  "cola": [
+    {
+      "mineral": "hierro",
+      "cantidad": 12000
+    },
+    {
+      "mineral": "oro",
+      "cantidad": 1100
+    }
+  ]
+}

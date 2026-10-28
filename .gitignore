@@ -1,0 +1,7 @@
+bot_log.txt
+__pycache__/
+*.pyc
+debug_*.png
+mapa_detectado.png
+.env
+bot_id.txt
