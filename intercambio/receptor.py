@@ -29,9 +29,9 @@ def meter_recurso():
     time.sleep(0.3)
     heart.click(978, 280,button="right")
 
-    heart.click(976,282)
+    heart.click(976,282,button="right")
     time.sleep(0.3)
-    heart.click(999,287)
+    heart.click(999,287,button="right")
     if not comun.esperar_condicion(
         lambda: (heart.pixelMatchesColor(376, 250, (255, 208, 102), tolerance=15)
                  or heart.pixelMatchesColor(1227, 249, (255, 255, 255), tolerance=15)),

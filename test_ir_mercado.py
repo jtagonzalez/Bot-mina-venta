@@ -26,7 +26,7 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 BASE_DIR = Path(__file__).resolve().parent
 
 # ── configuración ─────────────────────────────────────────────────────────────
-MAXIMO_SLOTS        = 17   # slots máximos del almacén de la tienda
+# (el máximo del almacén ya NO se hardcodea: se lee del OCR "en_venta/máximo")
 CAPACIDAD_INVENTARIO = 17  # máximo de lotes que caben en el inventario del personaje
 
 MINERALES_ORDEN = [
@@ -238,18 +238,19 @@ def obtener_elementos_en_venta():
     texto, img_raw, img_proc = _ocr_region((505, 283, 120, 36), whitelist=True)
     print(f"[OCR] texto leído: '{texto.strip()}'")
 
-    m = re.search(r'\(?(\d{1,2})/', texto)
+    m = re.search(r'\(?(\d{1,2})/(\d{1,2})\)?', texto)
     if not m:
         texto2, _, _ = _ocr_region((333, 283, 290, 36), whitelist=False)
         t2 = re.sub(r'[Oo]', '0', texto2)
         print(f"[OCR] fallback: '{texto2.strip()}'")
-        m = re.search(r'\(?(\d{1,2})/', t2)
+        m = re.search(r'\(?(\d{1,2})/(\d{1,2})\)?', t2)
 
     if m:
         en_venta = int(m.group(1))
-        espacios = MAXIMO_SLOTS - en_venta
-        print(f"[OCR] en venta: {en_venta}/{MAXIMO_SLOTS} — espacios disponibles: {espacios}")
-        return en_venta, MAXIMO_SLOTS, espacios
+        maximo = int(m.group(2))
+        espacios = maximo - en_venta
+        print(f"[OCR] en venta: {en_venta}/{maximo} — espacios disponibles: {espacios}")
+        return en_venta, maximo, espacios
     return None, None, None
 
 # ── detección de inventario lleno ─────────────────────────────────────────────
@@ -780,9 +781,9 @@ def _abrir_ventana_comercio():
     en_venta, maximo, espacios = obtener_elementos_en_venta()
     if en_venta is None:
         print("[mercado] ⚠️ no se pudo leer el contador de elementos")
-        return None
+        return None, None
     print(f"[mercado] en venta: {en_venta}/{maximo} — espacios libres: {espacios}")
-    return espacios
+    return en_venta, espacios
 
 # ── flujo principal ───────────────────────────────────────────────────────────
 
@@ -804,17 +805,19 @@ def ir_mercado():
         return False
 
     print("[ir_mercado] ✅ en mercado — abriendo ventana de comercio")
-    espacios = _abrir_ventana_comercio()
+    en_venta, espacios = _abrir_ventana_comercio()
     if espacios is None:
         return True
 
-    # Retirar lo ya listado SOLO si el almacén está lleno: ahí no queda dónde
-    # poner mineral nuevo y hay que rearmar la lista con precios frescos.
-    # Antes la condición era `espacios < MAXIMO_SLOTS` (o sea: con que hubiera
-    # algo listado), así que en cada visita retiraba los mismos lotes y los
-    # volvía a listar al mismo precio exacto — ~45s tirados por viaje.
-    if espacios == 0:
-        print("[ir_mercado] almacén lleno — retirando todo para relistar con precios frescos")
+    # Retirar SIEMPRE que haya algo listado, aunque queden espacios libres
+    # (mismo criterio que venta_pan.py). Un lote que sigue listado es un lote
+    # que no se vendió: casi siempre porque otro jugador listó más barato
+    # después. Relistarlo lo vuelve a poner en precio_base-1, o sea competitivo
+    # de nuevo. Con la condición anterior (`espacios == 0`) los lotes viejos
+    # quedaban con el precio del viaje anterior hasta llenar el almacén, y
+    # mientras tanto no se vendía nada.
+    if en_venta > 0:
+        print(f"[ir_mercado] {en_venta} lote(s) ya listados — retirando todo para relistar con precios frescos")
         ok, retirados = retirar_minerales()
         while not ok:
             print("[ir_mercado] inventario lleno durante retirada — yendo al banco a depositar")
@@ -822,8 +825,8 @@ def ir_mercado():
                 print("[ir_mercado] ⚠️ no se pudo completar el ciclo banco→mercado")
                 break
             ok, retirados = retirar_minerales()
-    elif espacios < MAXIMO_SLOTS:
-        print(f"[ir_mercado] {MAXIMO_SLOTS - espacios} lote(s) ya listados y {espacios} espacio(s) libre(s) — se dejan como están")
+    else:
+        print("[ir_mercado] almacén vacío — nada que retirar")
 
     quedo_sin_vender = False
     inv = leer_inventario()

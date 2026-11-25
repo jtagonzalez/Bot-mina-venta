@@ -31,7 +31,9 @@ def _inventario_propio_tiene_recurso():
 
 def _abrir_ventana_buho():
     heart.click(941, 284,button="right")
+    heart.click(941, 284,button="right")
     time.sleep(0.3)
+    heart.click(978,280,button="right")
     heart.click(978,280,button="right")
     return comun.esperar_condicion(
         lambda: heart.pixelMatchesColor(376, 250, (255, 208, 102), tolerance=15),

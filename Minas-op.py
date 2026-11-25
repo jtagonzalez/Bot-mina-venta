@@ -4585,12 +4585,40 @@ def reiniciar_juego():
             os.startfile(shortcut)
             time.sleep(12)
     heart.moveTo(555,555)
+
+    def _gestionar_actualizacion():
+        """Si el launcher muestra 'ACTUALIZACIÓN NECESARIA', pulsa ACTUALIZAR.
+        El permiso de Windows (UAC) está desactivado en este PC, así que no
+        hay que aceptarlo. Retorna True si gestionó una actualización."""
+        act = buscar_imagen_en_inventario("actualizar.png", umbral=0.8)
+        if not act:
+            return False
+        print(f"🆕 Actualización necesaria — click en ACTUALIZAR ({act[0]}, {act[1]})")
+        time.sleep(1)
+        heart.click(act[0], act[1])
+        heart.moveTo(555, 555)
+        print("⏳ Esperando a que termine la actualización...")
+        time.sleep(20)
+        return True
+
     def _click_jugar():
         heart.moveTo(555,555)
         time.sleep(.8)
-        pyautogui.press('escape')
-        time.sleep(1)
-        for _ in range(45):
+        # Revisar ACTUALIZAR antes del escape: el escape podría cerrar el
+        # popup como si fuera "MÁS TARDE".
+        actualizado = _gestionar_actualizacion()
+        if not actualizado:
+            pyautogui.press('escape')
+            time.sleep(1)
+        intentos = 0
+        actualizaciones = 0
+        while intentos < 45:
+            intentos += 1
+            # Popup de actualización: gestionarlo y dar más tiempo a que aparezca JUGAR
+            if actualizaciones < 5 and _gestionar_actualizacion():
+                actualizaciones += 1
+                intentos = 0
+                continue
             jugar = buscar_imagen_en_inventario("jugar-boton.png")
             jugar2 = buscar_imagen_en_inventario("jugar2.png")
             if jugar:
@@ -4683,9 +4711,10 @@ def reiniciar_juego():
 #   Mapa 2: ( 988,180) ≈ (233,197,  9)  y  (1250,334) ≈ (243,227,158)
 #   Mapa 3: ( 815,455) ≈ ( 55, 41, 13)  y  ( 872,467) ≈ (180,152, 82)
 # ---------------------------------------------------------------------------
-# ── variables fijas del almacén e inventario — modificar según la cuenta ── venta de mineral
-MAXIMO_SLOTS       = 29   # slots disponibles en el almacén del mercado
-CAPACIDAD_INVENTARIO = 10  # lotes máximos que puede cargar el personaje a la vez
+# ── variable fija del inventario — modificar según la cuenta ── venta de mineral
+# (el máximo del almacén ya NO se hardcodea: se lee del OCR "en_venta/máximo"
+# en obtener_elementos_en_venta(), así nunca se desincroniza de la cuenta real)
+CAPACIDAD_INVENTARIO = 18  # lotes máximos que puede cargar el personaje a la vez
 
 def obtener_elementos_en_venta(max_intentos=3):
     def _ocr_region(region, zoom=3, whitelist=True):
@@ -4699,18 +4728,24 @@ def obtener_elementos_en_venta(max_intentos=3):
     for intento in range(max_intentos):
         texto, img_raw, img_proc = _ocr_region((505, 283, 120, 36), whitelist=True)
         print(f"[OCR] texto leído (intento {intento+1}): '{texto.strip()}'")
-        m = re.search(r'\(?(\d{1,2})/', texto)
+        # Se leen los DOS números ("en_venta/maximo") en vez de asumir el máximo
+        # por una constante fija: MAXIMO_SLOTS puede quedar desactualizado (p.ej.
+        # si la cuenta tiene 17 slots reales pero la constante quedó en 20 de un
+        # cambio anterior) y entonces el bot cree que hay espacio libre cuando el
+        # almacén ya está lleno, y sigue intentando poner cosas a la venta.
+        m = re.search(r'\(?(\d{1,2})/(\d{1,2})\)?', texto)
         if not m:
             # fallback región amplia — también con whitelist
             texto2, _, _ = _ocr_region((333, 283, 290, 36), whitelist=True)
             t2 = re.sub(r'[Oo]', '0', texto2)
             print(f"[OCR] fallback: '{texto2.strip()}'")
-            m = re.search(r'\(?(\d{1,2})/', t2)
+            m = re.search(r'\(?(\d{1,2})/(\d{1,2})\)?', t2)
         if m:
             en_venta = int(m.group(1))
-            espacios = MAXIMO_SLOTS - en_venta
-            print(f"[OCR] en venta: {en_venta}/{MAXIMO_SLOTS} — espacios disponibles: {espacios}")
-            return en_venta, MAXIMO_SLOTS, espacios
+            maximo = int(m.group(2))
+            espacios = maximo - en_venta
+            print(f"[OCR] en venta: {en_venta}/{maximo} — espacios disponibles: {espacios}")
+            return en_venta, maximo, espacios
         if intento < max_intentos - 1:
             print(f"[OCR] no se leyó número — reintentando en 2s")
             time.sleep(2)
@@ -5097,23 +5132,23 @@ MINERALES_ORDEN = [
     ('manganeso', 'manganeso'),
     ('kovalto',   'kovalto'),
     ('bauxita',   'bauxita'),
-    
-    
     ('cobre',     'cobre'),
+    ('hierro',    'hierro'),
+    ('estaño',    'estano'),
     ('plata',     'plata'),
+    ('bronce',    'bronce'),
     
-    ('estaño',    'estano'),
-    
-    
-
-    ('estaño',    'estano'),
-
-    
-    
-
-    ('bronce',    'bronce')
 ]
-"""('oro',       'oro'),,"""
+
+"""('oro',       'oro')"""
+# ─────────────────────────────────────────────────────────────────
+# PRECIO MÍNIMO DE VENTA POR MINERAL — protección contra manipulación
+# de precio (alguien lista muy barato para que el bot haga precio_base-1
+# y termine regalando el mineral). Si el precio detectado es MENOR a
+# este valor, el mineral NO se pone a la venta esa vuelta.
+# Poné 0 para desactivar el chequeo de ese mineral (sin tope).
+# Editá estos valores libremente, cambian con el mercado.
+# ─────────────────────────────────────────────────────────────────
 PRECIO_MINIMO = {
     'manganeso': 200000,
     'kovalto':   15000,
@@ -5398,15 +5433,15 @@ def _navegar_a_mercado():
     return False
 
 def _abrir_ventana_comercio():
-    """Abre la ventana de comercio en mapa3 y lee los espacios libres.
-    Retorna espacios libres o None si el OCR falla."""
+    """Abre la ventana de comercio en mapa3 y lee el contador.
+    Retorna (en_venta, espacios), o (None, None) si el OCR falla."""
     _reabrir_comercio()
     en_venta, maximo, espacios = obtener_elementos_en_venta()
     if en_venta is None:
         print("[mercado] ⚠️ no se pudo leer el contador de elementos")
-        return None
+        return None, None
     print(f"[mercado] en venta: {en_venta}/{maximo} — espacios libres: {espacios}")
-    return espacios
+    return en_venta, espacios
 
 def ir_mercado():
     establecer_actividad("vendiendo en el mercado")
@@ -5435,18 +5470,19 @@ def ir_mercado():
 
     # --- primera apertura: retirar minerales sin vender y vender inventario ---
     print("[ir_mercado] ✅ en mercado — abriendo ventana de comercio")
-    espacios = _abrir_ventana_comercio()
+    en_venta, espacios = _abrir_ventana_comercio()
     if espacios is None:
         return True
 
-    # Retirar lo ya listado SOLO si el almacén está lleno: ahí no queda dónde
-    # poner mineral nuevo y hay que rearmar la lista con precios frescos.
-    # Antes la condición era `espacios < MAXIMO_SLOTS` (o sea: con que hubiera
-    # algo listado), así que en cada visita retiraba los mismos lotes y los
-    # volvía a listar al mismo precio exacto — ~45s tirados por viaje sin
-    # cambiar nada.
-    if espacios == 0:
-        print("[ir_mercado] almacén lleno — retirando todo para relistar con precios frescos")
+    # Retirar SIEMPRE que haya algo listado, aunque queden espacios libres
+    # (mismo criterio que venta_pan.py). Un lote que sigue listado es un lote
+    # que no se vendió: casi siempre porque otro jugador listó más barato
+    # después. Relistarlo lo vuelve a poner en precio_base-1, o sea competitivo
+    # de nuevo. Con la condición anterior (`espacios == 0`) los lotes viejos
+    # quedaban con el precio del viaje anterior hasta llenar el almacén, y
+    # mientras tanto no se vendía nada.
+    if en_venta > 0:
+        print(f"[ir_mercado] {en_venta} lote(s) ya listados — retirando todo para relistar con precios frescos")
         ok, retirados = retirar_minerales()
         while not ok:
             # Límite de inventario alcanzado antes de vaciar todos los slots → ir al banco a vaciar
@@ -5455,8 +5491,8 @@ def ir_mercado():
                 print("[ir_mercado] ⚠️ no se pudo completar el ciclo banco→mercado")
                 break
             ok, retirados = retirar_minerales()
-    elif espacios < MAXIMO_SLOTS:
-        print(f"[ir_mercado] {MAXIMO_SLOTS - espacios} lote(s) ya listados y {espacios} espacio(s) libre(s) — se dejan como están")
+    else:
+        print("[ir_mercado] almacén vacío — nada que retirar")
 
     quedo_sin_vender = False
     inv = leer_inventario()
@@ -5588,6 +5624,14 @@ if __name__ == "__main__":
         inicio = time.time()
         print("↩️ Reinicio limpio — volviendo al inicio del loop principal")
         continue
+    # Si el launcher pide "ACTUALIZACIÓN NECESARIA" el bot se queda pegado:
+    # reiniciar el juego (dentro se pulsa ACTUALIZAR y luego JUGAR).
+    if buscar_imagen_en_inventario("actualizar.png", umbral=0.8):
+        print("🆕 Botón ACTUALIZAR detectado en el while principal — reiniciando juego")
+        reiniciar_juego()
+        _bot_reiniciando = False
+        inicio = time.time()
+        continue
     time.sleep(3)
     pelear2()
     inventario()
@@ -5682,7 +5726,7 @@ if __name__ == "__main__":
             while heart.pixelMatchesColor(1090, 247, (116,  83,  36), tolerance=5) and heart.pixelMatchesColor(528, 552 , (213, 198, 155), tolerance=5):      
                 #inventario(recorrido=None)
                 inter()
-                posiciones_2 = [(534, 469), (712, 376), (844,338), (913,303), (939, 297)]
+                posiciones_2 = [(534, 469), (712, 376), (844, 338), (913,303), (939, 297)]
 
                 if minar_ws(posiciones_2, "m1_s2", "mina 1 pueblo"):
                     break

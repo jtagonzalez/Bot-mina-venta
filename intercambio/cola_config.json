@@ -1,14 +1,18 @@
 {
-  "capacidad_inventario": 1200,
+  "capacidad_inventario": 1400,
   "posicion_companero": "abajo",
   "cola": [
     {
       "mineral": "hierro",
-      "cantidad": 12000
+      "cantidad": 6000
     },
     {
       "mineral": "oro",
-      "cantidad": 1100
+      "cantidad": 600
+    },
+    {
+      "mineral": "bronce",
+      "cantidad": 15000
     }
   ]
 }
